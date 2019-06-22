@@ -292,7 +292,8 @@ public class ThreadLocal<T> {
     private static AtomicInteger nextHashCode = new AtomicInteger(); //静态变量，即ThradLocal类所拥有
     //基于理论和实践，使用魔数0x61c88647每次累加的值对2^n取模，能够得到良好的散列值。
     private static final int HASH_INCREMENT = 0x61c88647;
-    //因为nextHashCode为类变量，所以每个ThreadLocal实例在初始化时threadLocalHashCode的取值都在现有的值基础上累加魔数值。 
+    //因为nextHashCode为类变量，
+    //所以每个ThreadLocal实例在初始化时，threadLocalHashCode的取值都在现有值的基础上累加魔数值。 
     private static int nextHashCode() {return nextHashCode.getAndAdd(HASH_INCREMENT); }
     //更多...此处省略...
 }
