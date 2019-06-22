@@ -2,9 +2,9 @@
 ---
 CountDownLatch通常用于控制线程等待，等待一组线程完成任务后再进行其它操作。
 - await()方法使调用线程等待；
-- 线程组线程完成任务后调用countDown方法释放锁。
+- 一组线程完成任务后调用countDown方法释放锁。
 
-#### 1.CountDownLatch源码
+#### 1. CountDownLatch源码
 ```java
 public class CountDownLatch {
 	/* CountDownLatch的同步器(继承AQS) */
@@ -54,10 +54,10 @@ public class CountDownLatch {
     }
 }
 ```
-#### 2.await方法
+#### 2. await方法
 ```java
 // 等待一组线程完成任务，等待过程中通过轮询查看线程组是已经否完成任务。
-// 当调用线程可以获得到锁时，说明其线程组已经都已经release，释放了锁；
+// 当调用线程可以获得到锁时，说明其线程组的线程已经都已经release，释放了锁；
 // 锁状态由初始计数器值减为了0
 public void await() throws InterruptedException {
     sync.acquireSharedInterruptibly(1); 
@@ -97,7 +97,7 @@ private void doAcquireSharedInterruptibly(int arg)
     }
 }
 ```
-#### 3.countDown方法 
+#### 3. countDown方法 
 ```java
 public void countDown() {
     sync.releaseShared(1); //释放锁
@@ -143,7 +143,7 @@ private void unparkSuccessor(Node node) {
 }
 ```
 
-#### 4.一个例子
+#### 4. 一个例子
 ```java
 public class CountDownLatchTest {
     private static CountDownLatch countDownLatch = new CountDownLatch(10);
