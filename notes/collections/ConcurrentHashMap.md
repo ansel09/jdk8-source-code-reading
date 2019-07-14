@@ -193,10 +193,10 @@ private final void treeifyBin(Node<K,V>[] tab, int index) {
             synchronized (b) {
                 if (tabAt(tab, index) == b) {
                     TreeNode<K,V> hd = null, tl = null;
-                    for (Node<K,V> e = b; e != null; e = e.next) {
+                    for (Node<K,V> e = b; e != null; e = e.next) { //遍历链表
                         TreeNode<K,V> p =
                             new TreeNode<K,V>(e.hash, e.key, e.val,
-                                              null, null);
+                                              null, null); 
                         if ((p.prev = tl) == null)
                             hd = p;
                         else

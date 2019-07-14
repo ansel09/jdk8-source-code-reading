@@ -15,5 +15,5 @@ JDK8源码阅读笔记
 + [Map, Set, List类图](https://github.com/ansel09/jdk8-source-code-reading/blob/master/summary/collection-and-map/Collection-and-Map.md)
 + HashMap
 + ConcurrentHashMap
-+ ArrayList
++ [ArrayList](./notes/collections/ArrayList.md)
 + CopyOnWriteArrayList
