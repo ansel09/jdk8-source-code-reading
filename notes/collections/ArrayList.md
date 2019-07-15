@@ -5,7 +5,7 @@
 + ArrayList底层基于定长数组实现；
 + 允许空值和重复元素；
 + 扩容：当往ArrayList中添加的元素数量大于其底层数组容量时，会重新生成一个更大的数组进行扩容；
-+ 实现RandomAcess标记接口，底层基于数组实现，是一片连续的内存空间，因此查找具有*O(1)*的复杂度；
++ 实现RandomAcess标记接口，底层基于数组实现，是一片连续的内存空间，因此查找具有O(1)的复杂度；
 + 线程安全：ArrayList是非线程安全的，与之相应的线程安全类有Vector，Stack以及并发容器CopyOnWriteArrayList；
 + ArrayList类图：
 ![ArrayList类图](./pics/ArrayList.jpg)
@@ -58,7 +58,6 @@ public ArrayList(Collection<? extends E> c) {
     }
 }
 ```
-
 综上，构造方法主要是初始化底层数组elementData，区别在于：
 
 - 无参构造方法会将elementData初始化为空数组*DEFAULTCAPACITY_EMPTY_ELEMENTDATA*；然后在插入元素时扩容，将*DEFAULT_CAPACITY*设定的大小重新初始化数组。
@@ -334,9 +333,79 @@ private class Itr implements Iterator<E> {
 ArrayList迭代器中方法均支持快速失败机制，在有其它线程并发修改时，迭代器会快速失败。这样可以避免程序在将来不确定的时间里出现不确定的行为。
 
 #### 5.关于源码中提到的 *Java 6260652 bug*
+官网bug描述地址：[*6260652:Arrays.asList(x).toArray().getClass() should be Object[].class*](https://bugs.java.com/bugdatabase/view_bug.do?bug_id=6260652)，此bug是2005年提出，现已修复。
 
-待完善...
+下面节选自官网的Bug问题描述：
 
+The Collection documentation claims that
+
+`collection.toArray()`
+
+is "identical in function" to
+
+`collection.toArray(new Object[0]);`
+
+However, the implementation of `Arrays.asList` does not follow this: If created with an array of a subtype (e.g. String[]), its toArray() will return an array of the same type (because it use clone()) instead of an Object[].
+
+If one later tries to store non-Strings (or whatever) in that array, an ArrayStoreException is thrown.
+
+Either the `Arrays.asList()` implementation (which may return an array of component type not Object) or the Collection toArray documentation (which does not allow argumentless toArray() to return arrays of subtypes of Object) is wrong.
+
+
+也就是说Arrays.asList创建的ArrayList，需要注意此ArrayList是Arrays中的内部类，调用其toArray方法返回的是带有具体类型的数组T[]，而不是Object[]。
+```java
+// Arrays#asList()方法
+public static <T> List<T> asList(T... a) {
+    return new ArrayList<>(a); //ArrayList为其内部类
+}
+
+// Arrays内部类ArrayList
+private static class ArrayList<E> extends AbstractList<E>
+    implements RandomAccess, java.io.Serializable
+{
+    private static final long serialVersionUID = -2764017481108945198L;
+    //内部数组类型与java.util.ArrayList不同，不是Object[]，带有具体类型
+    private final E[] a; 
+
+    ArrayList(E[] array) {
+        // E[] 数组
+        a = Objects.requireNonNull(array);
+    }
+
+    @Override
+    public Object[] toArray() {
+        return a.clone(); //经过clone返回的仍然是E[]
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> T[] toArray(T[] a) {
+        int size = size();
+        if (a.length < size)
+            return Arrays.copyOf(this.a, size,
+                                 (Class<? extends T[]>) a.getClass());
+        System.arraycopy(this.a, 0, a, 0, size);
+        if (a.length > size)
+            a[size] = null;
+        return a;
+    }
+    // 省略其它代码... 
+}
+```
+由上面代码可以看出Arrays.asList()得到的List在调用toArray()方法返回的不一定是Object[]，非常有可能是E[]。
+
+这与java.util.ArrayList中toArray方法不一样，如下面代码所示，ArrayList中的elementData是Object[]，因此经copyOf()方法返回的也是Object[]类型。
+```java
+// ArrayList#toArray()
+public Object[] toArray() {
+    return Arrays.copyOf(elementData, size);
+}
+
+// Arrays#copyOf()
+public static <T> T[] copyOf(T[] original, int newLength) {
+    return (T[]) copyOf(original, newLength, original.getClass());
+}
+```
 
 #### 6.总结
 
@@ -379,7 +448,7 @@ public void remove() {
 
 ```
 
-- 此外，在上面代码示例#00代码示例00#中，while循环中调用了hasNext()方法，若此时ArrayList中只有2个元素，当第一次循环list.remove(tmp)删除一个元素后，size将变为1。此时cursor==1，size==1，hasNext()方法将会返回false，提前结束迭代，不会发生任何异常。
+- 此外，在上面代码示例#00代码示例00#中，while循环中调用了hasNext()方法，若此时ArrayList中只有2个元素，当第一次循环list.remove(tmp)删除一个元素后，size将变为1。此时cursor==1 & size==1，hasNext()方法将会返回false，因此提前结束迭代，不会发生任何异常。分析hasNext()方法可知，当满足cursor + 1 = size的关系时，删除当前元素会导致没有遍历到最后一个元素就提前跳出while循环，且不抛出任何异常。
 ```java
 public boolean hasNext() {
     return cursor != size;
