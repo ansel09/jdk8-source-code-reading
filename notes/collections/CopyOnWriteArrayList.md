@@ -140,7 +140,7 @@ public void add(int index, E element) {
 向CopyOnWriteArrayList中添加元素，就需要增加数组长度，与ArrayList的扩容机制不同，从源码中可以看出每次添加元素时创建新数组，底层新数组长度比原先数组的大待添加元素的个数，这里只添加一个元素，所以新数组仅仅会大1；最后基于写时复制的策略，在写入完成也就是元素添加之后替换掉原先底层的数组。
 
 
-addIfAbsent方法对于入参为链表中已存在的元素，则不予添加到链表中。
+addIfAbsent方法对于入参元素为链表中已存在的元素，则不予添加到链表中。
 ```java
 // 判断元素是否已经存在链表中，不存在添加到链表中，存在则返回false
 public boolean addIfAbsent(E e) {
@@ -533,7 +533,7 @@ public void sort(Comparator<? super E> c) {
 ```
 
 #### 4.迭代器
-CopyOnWriteArrayList的迭代器不支持对链表的修改，且在迭代过程中对其它线程对链表的修改并不能及时感知到，是一种若一致性的迭代器
+CopyOnWriteArrayList的迭代器不支持对链表的修改，且在迭代过程中对其它线程对链表的修改并不能及时感知到，是一种弱一致性的迭代器
 ```java
 static final class COWIterator<E> implements ListIterator<E> {
     // 保存底层数组的快照，对其它线程的修改感觉不到，弱一致性
