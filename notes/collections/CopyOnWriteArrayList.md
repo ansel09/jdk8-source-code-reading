@@ -481,9 +481,7 @@ private void resetLock() {
 }
 
 ```
-##### 3.6 writeObject方法 
-
-
+##### 3.6 序列化方法 
 ```java
 // 反序列化调用方法
 private void readObject(java.io.ObjectInputStream s)
@@ -613,4 +611,4 @@ static final class COWIterator<E> implements ListIterator<E> {
 
 + 因为写时复制的内存占用以及锁竞争的原因，CopyOnWriteArrayList适合读多写少的场景。
 
-+ 此外，CopyOnWriteArrayList提供了弱一致性的迭代器，保证在获取迭代器后，其他线程对list的修改当前线程不可见，迭代器遍历时候的数组是获取迭代器时候的一个快照。
++ 此外，CopyOnWriteArrayList提供了弱一致性的迭代器，迭代器获取之后其他线程对list的修改当前迭代器不可见，因为迭代器在实例化时获取的是底层数组的快照。
