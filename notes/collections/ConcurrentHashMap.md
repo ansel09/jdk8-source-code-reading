@@ -1,107 +1,80 @@
-```java
-/* ---------------- Nodes -------------- */
+### *ConcurrentHashMap源码分析*
+---
+#### 1.概述
 
-/**
- * Key-value entry.  This class is never exported out as a
- * user-mutable Map.Entry (i.e., one supporting setValue; see
- * MapEntry below), but can be used for read-only traversals used
- * in bulk tasks.  Subclasses of Node with a negative hash field
- * are special, and contain null keys and values (but are never
- * exported).  Otherwise, keys and vals are never null.
- */
-static class Node<K,V> implements Map.Entry<K,V> {
-    final int hash;
-    final K key;
-    volatile V val;
-    volatile Node<K,V> next;
++ HashMap是非线程安全的，在JDK1.5之前，通常使用HashTable作为HashMap的线程安全版本使用。
++ JDK1.7是基于Segement分段锁和Node实现的。DEFAULT_CONCURRENCY_LEVEL=16表示默认的并发度，表示CHM维护了多少个分段锁Segement，Segement继承自ReentrantLock；在定位的时候会进行两次哈希，第一次定位到哪一把分段所，第二次哈希则定位桶...
++ JDK1.8基于Node + CAS + synchronized实现，不再使用JDK1.7的设计。
 
-    Node(int hash, K key, V val, Node<K,V> next) {
-        this.hash = hash;
-        this.key = key;
-        this.val = val;
-        this.next = next;
-    }
-
-    public final K getKey()       { return key; }
-    public final V getValue()     { return val; }
-    public final int hashCode()   { return key.hashCode() ^ val.hashCode(); }
-    public final String toString(){ return key + "=" + val; }
-    // 不支持修改，不可变
-    public final V setValue(V value) {
-        throw new UnsupportedOperationException();
-    }
-
-    public final boolean equals(Object o) {
-        Object k, v, u; Map.Entry<?,?> e;
-        return ((o instanceof Map.Entry) &&
-                (k = (e = (Map.Entry<?,?>)o).getKey()) != null &&
-                (v = e.getValue()) != null &&
-                (k == key || k.equals(key)) &&
-                (v == (u = val) || v.equals(u)));
-    }
-
-    /**
-     * Virtualized support for map.get(); overridden in subclasses.
-     */
-    Node<K,V> find(int h, Object k) { // 哈希值h
-        Node<K,V> e = this;
-        if (k != null) {
-            do {
-                K ek;
-                if (e.hash == h &&
-                    ((ek = e.key) == k || (ek != null && k.equals(ek))))
-                    return e;
-            } while ((e = e.next) != null);
-        }
-        return null;
-    }
-}
-```
-
-
-
-
-
+#### 2.常量，属性
 
 
 ```java
-/** 根据sizeCtl初始化数组table
- *  1.线程尝试竞争table初始化任务，竞争失败则等待其它线程完成初始化，返回。
- *  2.竞争成功，则开始初始化table，并设置扩容阈值。
-*/
-private final Node<K,V>[] initTable() {
-    Node<K,V>[] tab; int sc;
-    while ((tab = table) == null || tab.length == 0) {
-        if ((sc = sizeCtl) < 0) // sizeCtl < 0 表示已经有其它线程在在初始化table
-        	// 当前线程竞争初始化任务失败，自旋直到其它线程完成对table初始化，然后退出while循环
-            Thread.yield(); 
+/* ---------------- Constants -------------- */
+private static final int MAXIMUM_CAPACITY = 1 << 30;
+private static final int DEFAULT_CAPACITY = 16;
+static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
+private static final int DEFAULT_CONCURRENCY_LEVEL = 16; //默认并发度
+private static final float LOAD_FACTOR = 0.75f;
+static final int TREEIFY_THRESHOLD = 8; //树化阈值
+static final int UNTREEIFY_THRESHOLD = 6; //树转换成链表阈值
+static final int MIN_TREEIFY_CAPACITY = 64; //树化的前提，容量达到64+
 
-        else if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) { // CAS尝试设置sizeCtl为-1
-            try { //设置sizeCtl成功，说明线程竞争得到初始化任务
-                if ((tab = table) == null || tab.length == 0) { // table未初始化
-                    int n = (sc > 0) ? sc : DEFAULT_CAPACITY; // sc保留了开始的sizeCtl
-                    @SuppressWarnings("unchecked")
-                    Node<K,V>[] nt = (Node<K,V>[])new Node<?,?>[n]; // 初始化table
-                    table = tab = nt; 
-                    sc = n - (n >>> 2); // 初始化后设置扩容阈值为 3/4 * n
-                }
-            } finally {
-                sizeCtl = sc; // 设置下次扩容阈值
-            }
-            break;
-        }
-    }
-    return tab;
-}
-```
-
-
-
-
-```java 
 /**
- * 
+ * Minimum number of rebinnings per transfer step. Ranges are
+ * subdivided to allow multiple resizer threads.  This value
+ * serves as a lower bound to avoid resizers encountering
+ * excessive memory contention.  The value should be at least
+ * DEFAULT_CAPACITY.
  */
+private static final int MIN_TRANSFER_STRIDE = 16;
+
+/**
+ * The number of bits used for generation stamp in sizeCtl.
+ * Must be at least 6 for 32bit arrays.
+ */
+private static int RESIZE_STAMP_BITS = 16;
+
+/**
+ * The maximum number of threads that can help resize.
+ * Must fit in 32 - RESIZE_STAMP_BITS bits.
+ */
+private static final int MAX_RESIZERS = (1 << (32 - RESIZE_STAMP_BITS)) - 1;
+
+/**
+ * The bit shift for recording size stamp in sizeCtl.
+ */
+private static final int RESIZE_STAMP_SHIFT = 32 - RESIZE_STAMP_BITS;
+
+/*
+ * Encodings for Node hash fields. See above for explanation.
+ */
+// 表示这是一个ForwardingNode
+static final int MOVED     = -1; // hash for forwarding nodes
+static final int TREEBIN   = -2; // hash for roots of trees
+static final int RESERVED  = -3; // hash for transient reservations
+// 
+static final int HASH_BITS = 0x7fffffff; // usable bits of normal node hash
+
+/** Number of CPUS, to place bounds on some sizings */
+// CPU逻辑核心数
+static final int NCPU = Runtime.getRuntime().availableProcessors();
+````
+
+
+#### 3.结点相关的内部类
+ConcurrentHashMap中定义了几个结点相关的内部类。
+
+
+
+#### 4.构造方法
+
+
+#### 3.重要方法
+
+##### 3.1 put方法
+```java
+// 
 final V putVal(K key, V value, boolean onlyIfAbsent) {
     if (key == null || value == null) throw new NullPointerException();
     int hash = spread(key.hashCode());
@@ -167,6 +140,109 @@ final V putVal(K key, V value, boolean onlyIfAbsent) {
     }
     addCount(1L, binCount);
     return null;
+}
+
+
+```
+
+
+
+#### 4.迭代器
+#### 5.总结
+
+
+
+
+
+
+
+```java
+/* ---------------- Nodes -------------- */
+
+/**
+ * Key-value entry.  This class is never exported out as a
+ * user-mutable Map.Entry (i.e., one supporting setValue; see
+ * MapEntry below), but can be used for read-only traversals used
+ * in bulk tasks.  Subclasses of Node with a negative hash field
+ * are special, and contain null keys and values (but are never
+ * exported).  Otherwise, keys and vals are never null.
+ */
+static class Node<K,V> implements Map.Entry<K,V> {
+    final int hash;
+    final K key;
+    volatile V val;
+    volatile Node<K,V> next;
+
+    Node(int hash, K key, V val, Node<K,V> next) {
+        this.hash = hash;
+        this.key = key;
+        this.val = val;
+        this.next = next;
+    }
+
+    public final K getKey()       { return key; }
+    public final V getValue()     { return val; }
+    public final int hashCode()   { return key.hashCode() ^ val.hashCode(); }
+    public final String toString(){ return key + "=" + val; }
+    // 不支持修改，不可变
+    public final V setValue(V value) {
+        throw new UnsupportedOperationException();
+    }
+
+    public final boolean equals(Object o) {
+        Object k, v, u; Map.Entry<?,?> e;
+        return ((o instanceof Map.Entry) &&
+                (k = (e = (Map.Entry<?,?>)o).getKey()) != null &&
+                (v = e.getValue()) != null &&
+                (k == key || k.equals(key)) &&
+                (v == (u = val) || v.equals(u)));
+    }
+
+    /**
+     * Virtualized support for map.get(); overridden in subclasses.
+     */
+    Node<K,V> find(int h, Object k) { // 哈希值h
+        Node<K,V> e = this;
+        if (k != null) {
+            do {
+                K ek;
+                if (e.hash == h &&
+                    ((ek = e.key) == k || (ek != null && k.equals(ek))))
+                    return e;
+            } while ((e = e.next) != null);
+        }
+        return null;
+    }
+}
+
+
+/** 根据sizeCtl初始化数组table
+ *  1.线程尝试竞争table初始化任务，竞争失败则等待其它线程完成初始化，返回。
+ *  2.竞争成功，则开始初始化table，并设置扩容阈值。
+*/
+private final Node<K,V>[] initTable() {
+    Node<K,V>[] tab; int sc;
+    while ((tab = table) == null || tab.length == 0) {
+        if ((sc = sizeCtl) < 0) // sizeCtl < 0 表示已经有其它线程在在初始化table
+            // 当前线程竞争初始化任务失败，自旋直到其它线程完成对table初始化，然后退出while循环
+            Thread.yield(); 
+
+        else if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) { // CAS尝试设置sizeCtl为-1
+            try { //设置sizeCtl成功，说明线程竞争得到初始化任务
+                if ((tab = table) == null || tab.length == 0) { // table未初始化
+                    int n = (sc > 0) ? sc : DEFAULT_CAPACITY; // sc保留了开始的sizeCtl
+                    @SuppressWarnings("unchecked")
+                    Node<K,V>[] nt = (Node<K,V>[])new Node<?,?>[n]; // 初始化table
+                    table = tab = nt; 
+                    sc = n - (n >>> 2); // 初始化后设置扩容阈值为 3/4 * n
+                }
+            } finally {
+                sizeCtl = sc; // 设置下次扩容阈值
+            }
+            break;
+        }
+    }
+    return tab;
 }
 ```
 
