@@ -356,6 +356,7 @@ final Node<K,V>[] resize() {
                         next = e.next;
                         // 接下来将链表中结点一分为二，
                         // 当然有可能其中一个为空链表
+                        // e.hash & oldCap表示取hash第n低位的值是0还是1?
                         if ((e.hash & oldCap) == 0) {
                             if (loTail == null)
                                 loHead = e;
@@ -677,11 +678,73 @@ final class EntryIterator extends HashIterator
     public final Map.Entry<K,V> next() { return nextNode(); }
 }
 ```
+
 可以通过entrySet()，values()和keySet()方法获取相应的字段值。
 
+#### 5.一点思考：为什么扩容时选择2倍扩容?
 
-#### 5.总结
-+ HashMap在JDK1.8中做的优化
+1. 提升桶定位时计算效率：HashMap从首次添加元素时将，将底层数组初始化为大小16的数组(无参构造)，或者初始化为tablesizeFor(initCapacity)大小的数组(构造时赋值给threshold，初始化时会取大小为构造时threshold的值)。即HashMap的容量始终是2的幂次，即cap = 2^n(4<= n <= 30)，如此一次散列之后的桶定位可以用位运算index = hash % cap = hash & (cap -1)。
+
+2. 扩容时，便于重新该结点定位桶：JDK1.7中在扩容时会计算是否需要rehash，如果需要重新散列，那么所有的键都要重新计算哈希值，而JDK1.8中键的哈希值自始至终不会发生改变。JDK1.8扩容时，链表和红黑树的拆分都是一拆为二的，链表和红黑树的结点经过扩容移动后要么在原先index的桶，要么在原先index+ldCap(扩容前的容量值)的桶，只会在这两个位置。
+
+    - 为什么? 考虑扩容之后的桶定位：newIndex = hash % newCap = hash & (newCap - 1)，假设扩容之前桶容量为64=2^6[1000000]，扩容后128=2^7[10000000]，那么桶定位的变化就是由扩容前取hash值的低6位，变成了扩容后取低7位，也就是旧index加上第7低位表示的值(第7低位值要么是0要么是1，即0或者2^6)，则么显然newIndex=oldIndex或newIndex=oldIndex+oldCap。下面是拆分红黑树的代码：
+
+```java
+// 扩容时拆分红黑树方法
+final void split(HashMap<K,V> map, Node<K,V>[] tab, int index, int bit) {
+    TreeNode<K,V> b = this; 
+    // Relink into lo and hi lists, preserving order
+    TreeNode<K,V> loHead = null, loTail = null;
+    TreeNode<K,V> hiHead = null, hiTail = null;
+    int lc = 0, hc = 0;
+    for (TreeNode<K,V> e = b, next; e != null; e = next) {
+        next = (TreeNode<K,V>)e.next;
+        e.next = null;
+        // bit在扩容时会传入旧容量值
+        // 同样是取hash值的第n低位值，据此进行二分
+        // 拆分时保存成链表
+        if ((e.hash & bit) == 0) {
+            if ((e.prev = loTail) == null)
+                loHead = e;
+            else
+                loTail.next = e;
+            loTail = e;
+            ++lc;
+        }
+        else {
+            if ((e.prev = hiTail) == null)
+                hiHead = e;
+            else
+                hiTail.next = e;
+            hiTail = e;
+            ++hc;
+        }
+    }
+    // 树化还是转换成链表
+    if (loHead != null) {
+        if (lc <= UNTREEIFY_THRESHOLD) //由TreeNode->Node
+            tab[index] = loHead.untreeify(map);
+        else { //红黑树化，因为拆分的时候时以链表关联的
+            tab[index] = loHead;
+            if (hiHead != null) // (else is already treeified)
+                loHead.treeify(tab);
+        }
+    }
+    if (hiHead != null) {
+        if (hc <= UNTREEIFY_THRESHOLD)
+            tab[index + bit] = hiHead.untreeify(map);
+        else {
+            tab[index + bit] = hiHead;
+            if (loHead != null)
+                hiHead.treeify(tab);
+        }
+    }
+}
+```
+
+
+#### 6.总结
++ HashMap在JDK1.8中做的优化，结构优化
 + Fail-fast机制
-+ 扩容：初始扩容和非初始扩容
-+ 其键和值均可以为null，而HashTable和ConcurrentHashMap的键值是不能为null的
++ 扩容：初始扩容和非初始扩容，2倍扩容；JDK1.8时插入之后再扩容，JDK1.7是插入之前就扩容。
++ 键值null：HashMap的键和值均可以为null，而HashTable和ConcurrentHashMap的键值是不能为null的；在实现上JDK1.8中没有区分key为null的情况，而JDK1.7中对于键为null的情况调用putForNullKey()方法；两个版本中如果键为null，hash()方法得到的哈希值都是0，即键为null的元素都始终位于哈希表中第一个桶中。
