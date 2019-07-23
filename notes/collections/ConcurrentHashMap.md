@@ -16,7 +16,7 @@ private static final int DEFAULT_CAPACITY = 16; //默认容量值
 /*虚拟机限制数组最大长度，主要用于toArray方法*/
 static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
 
-/* 在JDK1.8中，没太用到，为兼容而保留。在JDK1.7中描述并发度，与分段锁有关；
+/* 在JDK1.8中，该字段为兼容而保留。在JDK1.7中描述并发度，与分段锁有关；
    1.8中实际的并发度应该是与实时的用到桶个数关联的，锁的粒度由分段细化到了桶*/
 private static final int DEFAULT_CONCURRENCY_LEVEL = 16; //默认并发度
 private static final float LOAD_FACTOR = 0.75f; //兼容保留字段
@@ -757,7 +757,7 @@ Node<K,V> find(int h, Object k) {
 ConcurrentHashMap的键值不能为null，同样HashTable也是如此。
 
 因为Hashtable和ConcurrentHashMap用于多线程场景，假若可以为null，则map.get(key)得到了null，并不能判断key映射的value是null,还是没有找到对应的key而返回null，这是模糊不清的；而此种情形在HashMap是没有问题的，可以借助containKey（key）去判断； Hashtable和ConcurrentHashMap下
-一个线程先get(key)再containKey(key)，但实际情况下这两个方法之前，其他线程对于这个key的读写有太多种可能，比如简单的情形--key被删除了。
+一个线程先get(key)再containKey(key)，但实际情况下这两个方法之前，其它线程对于这个key的读写有太多种可能，导致不能像在HashMap中那样通过containKey方法判断出到底是哪种情况。
 
 下面引用大师Doug Lea的一段话：
 
@@ -775,7 +775,7 @@ Collections that Josh Bloch and I have long disagreed about.)Collections that Jo
 #### 7.总结
 
 + ConcurrentHashMap达到扩容上限值时，就不再进行扩容，但此时仍然能添加元素，只不过继续存放大量数据的情形会导致更大可能性的哈希碰撞，元素查找定位的效率也会随之下降。
-+ ConcurrentHashMap的迭代器具有弱一致性，迭代器遍历的修改可能看不到。弱一致性设计主要是为了提升效率，这是一致性与效率之间的权衡。因为要证强一致性，需要靠锁来保证。
++ ConcurrentHashMap的迭代器具有弱一致性，迭代器遍历的修改可能看不到。弱一致性设计主要是为了提升效率，这是一致性与效率之间的权衡。因为强一致性，需要靠锁来保证。
 + size()方法和isEmpty()方法返回的并不是实时值，真实情况是总是变化的，因此只能是近似的估计值，且在并发环境下用处很小。
 + 扩容重叠，则放弃，由属于本轮扩容的线程中最后一个线程扫漏处理其分到的任务(桶)。
 + ConcurrentHashMap的sizeCtl在扩容时高16位表示轮次，低16位表示线程数。
